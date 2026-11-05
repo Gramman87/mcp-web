@@ -1,3 +1,4 @@
+import { localhostAllowedOrigins, originValidationResponse } from "@modelcontextprotocol/server";
 import { createMcpHandler } from "mcp-handler";
 import { z } from "zod";
 import { customers, metrics, tickets, docs } from "@/lib/data";
@@ -168,4 +169,16 @@ const handler = createMcpHandler(
   { serverInfo: { name: "mcp-web", version: "0.1.0" } }
 );
 
-export { handler as GET, handler as POST };
+// The MCP spec requires servers to check Origin so a web page can't drive this endpoint from a
+// visitor's browser. Requests without an Origin header, which most MCP clients send, pass.
+const allowedOrigins = [
+  ...localhostAllowedOrigins(),
+  "mcp-web-nine.vercel.app",
+  ...(process.env.MCP_ALLOWED_ORIGINS ?? "").split(",").map((h) => h.trim()).filter(Boolean),
+];
+
+async function guarded(req: Request): Promise<Response> {
+  return originValidationResponse(req, allowedOrigins) ?? handler(req);
+}
+
+export { guarded as GET, guarded as POST };
