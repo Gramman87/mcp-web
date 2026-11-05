@@ -3,7 +3,14 @@
 import { useState, useRef, useEffect } from "react";
 
 type ToolCall = { name: string; input: Record<string, unknown>; result: unknown };
-type Message = { role: "user" | "assistant"; content: string; tool_calls?: ToolCall[] };
+type Message = {
+  role: "user" | "assistant";
+  content: string;
+  tool_calls?: ToolCall[];
+  engine?: "claude" | "demo";
+  notice?: string | null;
+  failed?: boolean;
+};
 
 const TOOL_LABELS: Record<string, string> = {
   get_metrics: "Get Metrics",
@@ -25,9 +32,9 @@ const TOOL_COLORS: Record<string, string> = {
 
 const EXAMPLES = [
   "Which accounts are at risk and how much MRR could we lose?",
-  "Show me open support tickets — any patterns?",
+  "Show me open support tickets. Any patterns?",
   "What does our revenue breakdown look like by plan?",
-  "Look up Initech — what's their health and any open tickets?",
+  "Look up Initech: what's their health and any open tickets?",
   "What are our current business metrics?",
   "Find documentation about security and compliance",
 ];
@@ -49,7 +56,9 @@ export default function Home() {
     setInput("");
 
     const userMsg: Message = { role: "user", content: msg };
-    const updated = [...messages, userMsg];
+    // Drop a failed exchange so the history alternates cleanly.
+    const kept = messages.filter((m, i) => !m.failed && !messages[i + 1]?.failed);
+    const updated = [...kept, userMsg];
     setMessages(updated);
     setLoading(true);
 
@@ -57,16 +66,21 @@ export default function Home() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: updated.map((m) => ({ role: m.role, content: m.content })) }),
+        body: JSON.stringify({
+          messages: updated.filter((m) => !m.failed).map((m) => ({ role: m.role, content: m.content })),
+        }),
       });
       const data = await res.json();
-      if (data.error) {
-        setMessages([...updated, { role: "assistant", content: `Error: ${data.error}` }]);
+      if (!res.ok || data.error) {
+        setMessages([...updated, { role: "assistant", content: `Error: ${data.error ?? res.status}`, failed: true }]);
       } else {
-        setMessages([...updated, { role: "assistant", content: data.response, tool_calls: data.tool_calls }]);
+        setMessages([
+          ...updated,
+          { role: "assistant", content: data.response, tool_calls: data.tool_calls, engine: data.engine, notice: data.notice },
+        ]);
       }
     } catch {
-      setMessages([...updated, { role: "assistant", content: "Failed to reach the server. Please try again." }]);
+      setMessages([...updated, { role: "assistant", content: "Failed to reach the server. Please try again.", failed: true }]);
     }
     setLoading(false);
   };
@@ -84,14 +98,13 @@ export default function Home() {
           </div>
           <div>
             <h1 className="text-sm font-bold text-white">MCP Enterprise Server</h1>
-            <p className="text-xs text-gray-600">Model Context Protocol &middot; 6 tools &middot; Live demo</p>
+            <p className="text-xs text-gray-600">Model Context Protocol &middot; 6 tools &middot; Fictional sample data</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <a href="https://github.com/Gramman87/mcp-server" target="_blank" rel="noopener noreferrer" className="text-xs text-gray-600 hover:text-white transition-colors border border-white/[0.06] rounded-full px-3 py-1">
-            View MCP source
+          <a href="https://github.com/Gramman87/mcp-web" target="_blank" rel="noopener noreferrer" className="text-xs text-gray-600 hover:text-white transition-colors border border-white/[0.06] rounded-full px-3 py-1">
+            View source
           </a>
-          <span className="text-xs text-gray-600 border border-white/[0.06] rounded-full px-3 py-1">Powered by Claude</span>
         </div>
       </header>
 
@@ -163,6 +176,12 @@ export default function Home() {
                     </div>
                   )}
                   <div className="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap">{msg.content}</div>
+                  {msg.engine && (
+                    <p className="text-xs text-gray-600">
+                      {msg.engine === "claude" ? "Answered by Claude" : "Rule-based demo"}
+                      {msg.notice && <span className="text-amber-300/80"> &middot; {msg.notice}</span>}
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -200,7 +219,7 @@ export default function Home() {
             </button>
           </div>
           <p className="text-xs text-gray-700 mt-2 text-center">
-            Web interface for MCP server &middot; Same tools available via stdio transport in Claude Desktop
+            The agent reaches these tools over MCP at /api/mcp &middot; the same tools run over stdio in the mcp-server repo
           </p>
         </div>
       </div>
