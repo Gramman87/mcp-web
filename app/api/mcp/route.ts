@@ -2,10 +2,11 @@ import { createMcpHandler } from "mcp-handler";
 import { z } from "zod";
 import { customers, metrics, tickets, docs } from "@/lib/data";
 
-// MCP server exposed over Streamable HTTP. The dynamic [transport] segment
-// lets mcp-handler serve the protocol endpoint at /api/mcp. The agent route
-// (/api/chat) connects to this as a real MCP client — same protocol you'd
-// use to reach a remote MCP server, co-located so it runs free on Vercel.
+// MCP server exposed over Streamable HTTP at /api/mcp. The agent route (/api/chat)
+// connects to this as a real MCP client, the same protocol you'd use to reach a
+// remote MCP server, co-located so it runs free on Vercel.
+export const maxDuration = 60;
+
 const handler = createMcpHandler(
   (server) => {
     server.registerTool(
@@ -14,7 +15,7 @@ const handler = createMcpHandler(
         title: "Get Business Metrics",
         description:
           "Returns current SaaS business metrics including MRR, ARR, churn rate, DAU/MAU, and NPS.",
-        inputSchema: {},
+        inputSchema: z.object({}),
       },
       async () => ({
         content: [{ type: "text", text: JSON.stringify(metrics, null, 2) }],
@@ -27,7 +28,7 @@ const handler = createMcpHandler(
         title: "Get Customer",
         description:
           "Look up a customer account by name or ID. Returns plan, MRR, health status, seat count, and CSM.",
-        inputSchema: { query: z.string().describe("Customer name or ID to look up") },
+        inputSchema: z.object({ query: z.string().describe("Customer name or ID to look up") }),
       },
       async ({ query }) => {
         const q = query.toLowerCase();
@@ -52,13 +53,13 @@ const handler = createMcpHandler(
       {
         title: "List Customers",
         description: "List customer accounts, optionally filtered by health status or plan.",
-        inputSchema: {
+        inputSchema: z.object({
           health: z
             .enum(["healthy", "at-risk", "churning", "all"])
             .optional()
             .describe("Filter by health status"),
           plan: z.string().optional().describe("Filter by plan name (e.g. Enterprise, Growth)"),
-        },
+        }),
       },
       async ({ health, plan }) => {
         let result = customers;
@@ -77,10 +78,10 @@ const handler = createMcpHandler(
       {
         title: "Get Support Tickets",
         description: "Retrieve support tickets, optionally filtered by customer name or status.",
-        inputSchema: {
+        inputSchema: z.object({
           customer: z.string().optional().describe("Filter by customer name"),
           status: z.enum(["open", "resolved", "all"]).optional().describe("Filter by ticket status"),
-        },
+        }),
       },
       async ({ customer, status }) => {
         let result = tickets;
@@ -102,9 +103,9 @@ const handler = createMcpHandler(
       {
         title: "Search Documentation",
         description: "Search the documentation library by keyword or category.",
-        inputSchema: {
+        inputSchema: z.object({
           query: z.string().describe("Search term or category (e.g. api, onboarding, security)"),
-        },
+        }),
       },
       async ({ query }) => {
         const q = query.toLowerCase();
@@ -134,11 +135,11 @@ const handler = createMcpHandler(
         title: "Query Database",
         description:
           "Run a structured query against the customer database. Supported queries: revenue_by_plan, at_risk_summary, churn_risk.",
-        inputSchema: {
+        inputSchema: z.object({
           query_type: z
             .enum(["revenue_by_plan", "at_risk_summary", "churn_risk"])
             .describe("The type of query to run"),
-        },
+        }),
       },
       async ({ query_type }) => {
         let payload: unknown;
@@ -164,8 +165,7 @@ const handler = createMcpHandler(
       }
     );
   },
-  {},
-  { basePath: "/api", maxDuration: 60 }
+  { serverInfo: { name: "mcp-web", version: "0.1.0" } }
 );
 
 export { handler as GET, handler as POST };

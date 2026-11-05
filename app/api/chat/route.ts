@@ -84,19 +84,27 @@ export async function POST(req: Request) {
       const toolResults: Anthropic.ToolResultBlockParam[] = [];
       for (const toolUse of toolUseBlocks) {
         const input = (toolUse.input ?? {}) as Record<string, unknown>;
-        const mcpResult = await mcpClient.callTool({ name: toolUse.name, arguments: input });
-
-        const content = Array.isArray(mcpResult.content) ? mcpResult.content : [];
-        const resultText = content
-          .map((c) => (c.type === "text" ? c.text : JSON.stringify(c)))
-          .join("\n");
+        // A protocol error, like an unknown tool name, goes back to Claude rather than ending the turn.
+        let resultText: string;
+        let isError: boolean;
+        try {
+          const mcpResult = await mcpClient.callTool({ name: toolUse.name, arguments: input });
+          const content = Array.isArray(mcpResult.content) ? mcpResult.content : [];
+          resultText = content
+            .map((c) => (c.type === "text" ? c.text : JSON.stringify(c)))
+            .join("\n");
+          isError = mcpResult.isError === true;
+        } catch (err) {
+          resultText = err instanceof Error ? err.message : "Tool call failed";
+          isError = true;
+        }
 
         toolCalls.push({ name: toolUse.name, input, result: parseResult(resultText) });
         toolResults.push({
           type: "tool_result",
           tool_use_id: toolUse.id,
           content: resultText,
-          is_error: mcpResult.isError === true,
+          is_error: isError,
         });
       }
 
